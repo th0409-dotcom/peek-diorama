@@ -55,7 +55,7 @@ figcaption{padding:10px 14px;font-size:14px;color:var(--muted)}
       <div class="load" id="load">3Dモデルを読み込み中…</div>
       <div class="hud"><div class="plate"><small>STAGE 7</small>夏祭りの夜</div></div>
       <div class="frame"></div>
-      <div class="hint" id="hint">指でなぞる／マウスを動かすと覗き込み（顔の代わり）</div>
+      <div class="hint" id="hint">2本指で拡大・縮小／ダブルタップで寄る／なぞると覗き込み</div>
     </div>
     <div class="side">
       <h2>見え方の切り替え</h2>
@@ -150,7 +150,8 @@ const sun=new THREE.DirectionalLight(0xfff4e6,1.6);sun.position.set(2,4,3);sun.c
 Object.assign(sun.shadow.camera,{left:-2,right:2,top:2,bottom:-2,near:.5,far:12});scene.add(sun);
 
 /* diorama group */
-const dio=new THREE.Group();dio.position.set(0,-0.5,-0.5);dio.rotation.x=0.32;dio.scale.setScalar(1.35);scene.add(dio);
+const view=new THREE.Group();scene.add(view);
+const dio=new THREE.Group();dio.position.set(0,-0.5,-0.5);dio.rotation.x=0.32;dio.scale.setScalar(1.35);view.add(dio);
 const base=new THREE.Mesh(new THREE.BoxGeometry(1.55,0.12,1.55),new THREE.MeshStandardMaterial({color:0x3a2a20,roughness:.8}));
 base.position.y=-0.06;base.receiveShadow=true;dio.add(base);
 const groundC=document.createElement('canvas');groundC.width=groundC.height=256;
@@ -269,7 +270,37 @@ applyMode();
 /* peek input: pointer stands in for head position */
 let touched=false;
 function setTarget(e){const r=phone.getBoundingClientRect();const nx=((e.clientX-r.left)/r.width-.5)*2,ny=((e.clientY-r.top)/r.height-.5)*2;target.x=nx*0.75;target.y=0.15-ny*0.6;touched=true;document.getElementById('hint').style.opacity=0;}
-phone.addEventListener('pointermove',setTarget);phone.addEventListener('pointerdown',setTarget);
+/* pinch zoom / pan / double tap */
+const PLANE_Z=-0.5,ZMIN=1,ZMAX=4;let zoom=1;
+function toScreen(cx,cy){const r=phone.getBoundingClientRect();return{x:((cx-r.left)/r.width-.5)*2*hw,y:-((cy-r.top)/r.height-.5)*2*hh};}
+function onPlane(sp){const t=(eye.z-PLANE_Z)/eye.z;return{x:eye.x+(sp.x-eye.x)*t,y:eye.y+(sp.y-eye.y)*t};}
+function zoomAt(cx,cy,k){const nz=Math.max(ZMIN,Math.min(ZMAX,zoom*k));k=nz/zoom;if(Math.abs(k-1)<1e-4)return;
+  const P=onPlane(toScreen(cx,cy));view.position.x=P.x+(view.position.x-P.x)*k;view.position.y=P.y+(view.position.y-P.y)*k;
+  view.position.z=PLANE_Z+(view.position.z-PLANE_Z)*k;zoom=nz;view.scale.setScalar(zoom);clampPan();}
+function panBy(dx,dy){const r=phone.getBoundingClientRect();const f=(eye.z-PLANE_Z)/eye.z;view.position.x+=dx/r.width*2*hw*f;view.position.y-=dy/r.height*2*hh*f;clampPan();}
+function clampPan(){const lim=(zoom-1)*1.0;view.position.x=Math.max(-lim,Math.min(lim,view.position.x));view.position.y=Math.max(-lim,Math.min(lim,view.position.y));
+  if(zoom<=1.001){view.position.set(0,0,0);}}
+let anim=null;
+function animateTo(cx,cy,target){const start=zoom;const t0=performance.now();anim=()=>{const u=Math.min(1,(performance.now()-t0)/260);const e=1-Math.pow(1-u,3);
+  const want=start+(target-start)*e;zoomAt(cx,cy,want/zoom);if(u>=1)anim=null;};}
+const pts=new Map();let pinch=null,lastTap=0,tapPos=null,moved=0;
+phone.addEventListener('pointerdown',e=>{phone.setPointerCapture(e.pointerId);pts.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=0;
+  if(pts.size===2){const [a,b]=[...pts.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2};}
+  if(e.pointerType!=='mouse'&&pts.size===1&&!window.__faceOn&&zoom<=1.001)setTarget(e);});
+phone.addEventListener('pointermove',e=>{
+  if(!pts.has(e.pointerId)){if(e.pointerType==='mouse'&&!window.__faceOn)setTarget(e);return;}
+  const prev=pts.get(e.pointerId);const cur={x:e.clientX,y:e.clientY};pts.set(e.pointerId,cur);moved+=Math.hypot(cur.x-prev.x,cur.y-prev.y);
+  if(pts.size>=2&&pinch){const [a,b]=[...pts.values()];const d=Math.hypot(a.x-b.x,a.y-b.y),cx=(a.x+b.x)/2,cy=(a.y+b.y)/2;
+    panBy(cx-pinch.cx,cy-pinch.cy);zoomAt(cx,cy,d/pinch.d);pinch={d,cx,cy};hideHint();return;}
+  if(window.__faceOn||zoom>1.001||e.pointerType==='mouse'&&e.buttons){if(zoom>1.001)panBy(cur.x-prev.x,cur.y-prev.y);else if(!window.__faceOn)setTarget(e);}
+  else setTarget(e);});
+function up(e){pts.delete(e.pointerId);if(pts.size<2)pinch=null;
+  if(pts.size===0&&moved<10){const now=performance.now();
+    if(now-lastTap<320&&tapPos&&Math.hypot(e.clientX-tapPos.x,e.clientY-tapPos.y)<40){animateTo(e.clientX,e.clientY,zoom>1.3?1:2.2);lastTap=0;}
+    else{lastTap=now;tapPos={x:e.clientX,y:e.clientY};}}}
+phone.addEventListener('pointerup',up);phone.addEventListener('pointercancel',up);
+phone.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.clientX,e.clientY,Math.exp(-e.deltaY*0.0015));hideHint();},{passive:false});
+function hideHint(){const h=document.getElementById('hint');if(h)h.style.opacity=0;}
 
 /* resize */
 function resize(){const r=phone.getBoundingClientRect();renderer.setSize(r.width,r.height,false);composer.setSize(r.width,r.height);hw=hh*r.width/r.height;bloom.resolution.set(r.width,r.height);}
@@ -281,6 +312,7 @@ function loop(){
   const dt=Math.min(clock.getDelta(),.05);tt+=dt;
   if(!touched&&!window.__faceOn&&!reduce){target.x=Math.sin(tt*.5)*.45;target.y=.15+Math.sin(tt*.37)*.18;}
   eye.x+=(target.x-eye.x)*Math.min(1,dt*6);eye.y+=(target.y-eye.y)*Math.min(1,dt*6);eye.z+=(target.z-eye.z)*Math.min(1,dt*4);
+  if(anim)anim();
   updateCamera();
   if(mode==='fx'&&!reduce){nextBurst-=dt;if(nextBurst<=0){burst();nextBurst=1.2+Math.random()*1.6;}}
   stepFireworks(dt);
