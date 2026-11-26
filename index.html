@@ -117,11 +117,14 @@ const eye={x:0,y:0.15,z:3.4},target={x:0,y:0.15,z:3.4};window.__peekTarget=targe
 let hw=0.5625,hh=1;
 
 /* off-axis projection: the phone screen is a window at z=0 */
+const camE={x:0,y:0.15,z:3.4};
 function updateCamera(){
-  camera.position.set(eye.x,eye.y,eye.z);
+  const zf=Math.pow(typeof zoom==='number'?zoom:1,0.9);camE.x=eye.x/zf;camE.y=0.15+(eye.y-0.15)/zf;camE.z=eye.z;
+  camera.position.set(camE.x,camE.y,camE.z);
   camera.quaternion.identity();
-  const n=camera.near,f=camera.far,k=n/eye.z;
-  camera.projectionMatrix.makePerspective((-hw-eye.x)*k,(hw-eye.x)*k,(hh-eye.y)*k,(-hh-eye.y)*k,n,f);
+  camera.updateMatrixWorld();
+  const n=camera.near,f=camera.far,k=n/camE.z;
+  camera.projectionMatrix.makePerspective((-hw-camE.x)*k,(hw-camE.x)*k,(hh-camE.y)*k,(-hh-camE.y)*k,n,f);
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
 }
 
@@ -151,7 +154,8 @@ Object.assign(sun.shadow.camera,{left:-2,right:2,top:2,bottom:-2,near:.5,far:12}
 
 /* diorama group */
 const view=new THREE.Group();scene.add(view);
-const orbit=new THREE.Group();orbit.position.set(0,-0.5,-0.5);orbit.rotation.x=0.32;view.add(orbit);
+const adjust=new THREE.Group();view.add(adjust);
+const orbit=new THREE.Group();orbit.position.set(0,-0.5,-0.5);orbit.rotation.x=0.32;adjust.add(orbit);
 const spin=new THREE.Group();orbit.add(spin);
 const dio=new THREE.Group();dio.scale.setScalar(1.35);spin.add(dio);
 const base=new THREE.Mesh(new THREE.BoxGeometry(1.55,0.12,1.55),new THREE.MeshStandardMaterial({color:0x3a2a20,roughness:.8}));
@@ -180,7 +184,7 @@ function stringOfLanterns(a,b,count,sag){
 }
 stringOfLanterns(new THREE.Vector3(-0.72,0.98,0.55),new THREE.Vector3(0.72,0.98,0.55),9,0.06);
 stringOfLanterns(new THREE.Vector3(-0.72,0.84,-0.55),new THREE.Vector3(0.72,0.84,-0.55),9,0.09);
-const poleMat=new THREE.MeshStandardMaterial({color:0x2a1d15,roughness:.9});
+const poleMat=new THREE.MeshStandardMaterial({color:0x2a1d15,roughness:.9,transparent:true});
 [[-0.72,0.55],[0.72,0.55],[-0.72,-0.55],[0.72,-0.55]].forEach(([x,z])=>{const h=z>0?1.0:.86;const p=new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,h,8),poleMat);p.position.set(x,h/2,z);p.castShadow=true;dio.add(p);});
 
 /* warm practical lights */
@@ -221,15 +225,15 @@ composer.addPass(grain);
 
 /* stall models */
 const MODELS=[['kingyo','金魚すくい'],['takoyaki','たこ焼き'],['ringoame','りんご飴'],['shateki','射的'],['wataame','わたあめ'],['yoyo','ヨーヨー釣り']];
-const protos={};const stalls=[];
+const protos={};const stalls=[];const boxes={};
 const layoutRow=[{x:-0.19,z:-0.52,r:0.1},{x:0.19,z:-0.52,r:-0.1},{x:-0.36,z:-0.1,r:0.95},{x:0.36,z:-0.1,r:-0.95},{x:-0.38,z:0.3,r:1.15},{x:0.38,z:0.3,r:-1.15}];
 let layout='row',solo=0;
 const plateName=document.querySelector('.plate');
 function placeStalls(){
   stalls.forEach(s=>dio.remove(s));stalls.length=0;
-  if(layout==='row'){MODELS.forEach(([k],i)=>{const P=protos[k];if(!P)return;const L=layoutRow[i];const s=P.clone();s.position.set(L.x,0,L.z);s.rotation.y=L.r;s.scale.setScalar(.7);dio.add(s);stalls.push(s);});
+  if(layout==='row'){MODELS.forEach(([k],i)=>{const P=protos[k];if(!P)return;const L=layoutRow[i];const s=P.clone();s.userData.k=k;s.position.set(L.x,0,L.z);s.rotation.y=L.r;s.scale.setScalar(.7);dio.add(s);stalls.push(s);});
     plateName.innerHTML='<small>STAGE 7</small>夏祭りの夜';}
-  else{const [k,label]=MODELS[solo];const P=protos[k];if(P){const s=P.clone();s.scale.setScalar(1.45);dio.add(s);stalls.push(s);}
+  else{const [k,label]=MODELS[solo];const P=protos[k];if(P){const s=P.clone();s.userData.k=k;s.scale.setScalar(1.45);dio.add(s);stalls.push(s);}
     plateName.innerHTML='<small>'+(solo+1)+' / '+MODELS.length+'</small>'+label;}
   if(typeof applyMode==='function')applyMode();
 }
@@ -242,7 +246,7 @@ function loadModel(k){
       const obj=g.scene;const box=new THREE.Box3().setFromObject(obj);const size=box.getSize(new THREE.Vector3());const c=box.getCenter(new THREE.Vector3());
       const sc=0.48/size.y;obj.scale.setScalar(sc);obj.position.set(-c.x*sc,-box.min.y*sc,-c.z*sc);
       obj.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;const m=o.material;m.emissive=new THREE.Color(0xffffff);m.emissiveMap=m.map;m.emissiveIntensity=.28;m.roughness=.85;m.metalness=0;}});
-      const G=new THREE.Group();G.add(obj);protos[k]=G;loaded++;loadEl.textContent='3Dモデルを読み込み中… '+loaded+' / '+MODELS.length;placeStalls();res();
+      const G=new THREE.Group();G.add(obj);G.updateMatrixWorld(true);boxes[k]=new THREE.Box3().setFromObject(G);protos[k]=G;loaded++;loadEl.textContent='3Dモデルを読み込み中… '+loaded+' / '+MODELS.length;placeStalls();res();
     },e=>rej(e));
   }));
 }
@@ -272,19 +276,62 @@ applyMode();
 /* peek input: pointer stands in for head position */
 let touched=false;
 function setTarget(e){const r=phone.getBoundingClientRect();const nx=((e.clientX-r.left)/r.width-.5)*2,ny=((e.clientY-r.top)/r.height-.5)*2;target.x=nx*1.2;target.y=0.15-ny*0.9;touched=true;document.getElementById('hint').style.opacity=0;}
+/* focus point: rotation pivots around what you are looking at */
+const focusL=new THREE.Vector3(),focusT=new THREE.Vector3();let wheelT=0;window.__dbg={focusL,focusT,get adjust(){return adjust.position},get zoom(){return zoom},get view(){return view.position},refocus:(x,y)=>refocus(x,y)};
+const AX=new THREE.Vector3(1,0,0),AY=new THREE.Vector3(0,1,0),_v1=new THREE.Vector3(),_v2=new THREE.Vector3(),_v3=new THREE.Vector3();
+const rc=new THREE.Raycaster(),NDC0=new THREE.Vector2(0,0);
+function placeOf(tilt,yaw,F,out){return out.copy(F).multiplyScalar(1.35).applyAxisAngle(AY,yaw).applyAxisAngle(AX,tilt).add(orbit.position);}
+let lastPt=null;
+function refocus(cx,cy){
+  if(zoom<=1.001){focusT.set(0,0,0);return;}
+  if(cx===undefined&&lastPt){cx=lastPt.x;cy=lastPt.y;}
+  const nd=NDC0.clone();if(cx!==undefined){const r=phone.getBoundingClientRect();nd.set(((cx-r.left)/r.width)*2-1,-((cy-r.top)/r.height)*2+1);}
+  updateCamera();scene.updateMatrixWorld(true);rc.setFromCamera(nd,camera);
+  if(layout==='row'){const hs=rc.intersectObjects(stalls,true)[0];
+    if(hs){let o=hs.object;while(o&&!stalls.includes(o))o=o.parent;if(o){focusT.set(o.position.x,0.12,o.position.z);centerOn(focusT);return;}}}
+  const h=rc.intersectObject(ground,false)[0];
+  if(h){const l=dio.worldToLocal(h.point.clone());l.y=0;
+    let best=null,bd=0.32;if(layout==='row')stalls.forEach(st=>{const d=Math.hypot(st.position.x-l.x,st.position.z-l.z);if(d<bd){bd=d;best=st;}});
+    if(best){l.set(best.position.x,0.12,best.position.z);}
+    l.x=Math.max(-.7,Math.min(.7,l.x));l.z=Math.max(-.7,Math.min(.7,l.z));focusT.copy(l);}
+}
+let centerAnim=null;
+function centerOn(F){
+  const w=dio.localToWorld(F.clone());           // world position now
+  const tz=w.z,tx=camE.x*(tz>=camE.z?0:(tz/camE.z)),ty=camE.y*(tz/camE.z); // where screen centre ray crosses depth tz
+  const dx=(camE.x+(0-camE.x)*((camE.z-tz)/camE.z))-w.x,dy=(camE.y+(0-camE.y)*((camE.z-tz)/camE.z))-w.y;
+  const sx=view.position.x,sy=view.position.y,t0=performance.now();
+  centerAnim=()=>{const u=Math.min(1,(performance.now()-t0)/350),e=1-Math.pow(1-u,3);view.position.x=sx+dx*e;view.position.y=sy+dy*e;clampPan();if(u>=1)centerAnim=null;};
+}
+/* see-through: stalls blocking the view to the focus point fade out */
+const fadeState=new WeakMap(),_ray=new THREE.Ray(),_inv=new THREE.Matrix4(),_dir=new THREE.Vector3(),_hit=new THREE.Vector3();
+function updateFade(dt){
+  if(layout!=='row'){stalls.forEach(st=>setFade(st,1,dt));return;}
+  const Fw=dio.localToWorld(_v3.copy(focusL));const cam=camera.position;_dir.subVectors(Fw,cam);const len=_dir.length();_dir.normalize();
+  let near=null,nd=0.5;if(zoom>1.001)stalls.forEach(st=>{const d=st.getWorldPosition(_v1).distanceTo(Fw);if(d<nd){nd=d;near=st;}});
+  stalls.forEach(st=>{let block=false;const b=boxes[st.userData.k];
+    if(b&&st!==near){_inv.copy(st.matrixWorld).invert();_ray.origin.copy(cam);_ray.direction.copy(_dir);_ray.applyMatrix4(_inv);
+      if(_ray.intersectBox(b,_hit)){_hit.applyMatrix4(st.matrixWorld);if(_hit.distanceTo(cam)<len-0.05)block=true;}}
+    setFade(st,block?0.15:1,dt);});
+}
+function setFade(st,target,dt){
+  let f=fadeState.get(st);if(!f){const mats=[];st.traverse(o=>{if(o.isMesh){o.material=o.material.clone();mats.push(o.material);}});f={v:1,mats};fadeState.set(st,f);}
+  f.v+=(target-f.v)*Math.min(1,dt*8);const t=f.v<0.98;
+  f.mats.forEach(m=>{m.transparent=t;m.opacity=f.v;m.depthWrite=!t;});
+}
 /* pinch zoom / pan / double tap */
 const PLANE_Z=-0.5,ZMIN=1,ZMAX=4;let zoom=1;
 function toScreen(cx,cy){const r=phone.getBoundingClientRect();return{x:((cx-r.left)/r.width-.5)*2*hw,y:-((cy-r.top)/r.height-.5)*2*hh};}
-function onPlane(sp){const t=(eye.z-PLANE_Z)/eye.z;return{x:eye.x+(sp.x-eye.x)*t,y:eye.y+(sp.y-eye.y)*t};}
+function onPlane(sp){const t=(camE.z-PLANE_Z)/camE.z;return{x:camE.x+(sp.x-camE.x)*t,y:camE.y+(sp.y-camE.y)*t};}
 function zoomAt(cx,cy,k){const nz=Math.max(ZMIN,Math.min(ZMAX,zoom*k));k=nz/zoom;if(Math.abs(k-1)<1e-4)return;
   const P=onPlane(toScreen(cx,cy));view.position.x=P.x+(view.position.x-P.x)*k;view.position.y=P.y+(view.position.y-P.y)*k;
   view.position.z=PLANE_Z+(view.position.z-PLANE_Z)*k;zoom=nz;view.scale.setScalar(zoom);clampPan();}
 function panBy(dx,dy){const r=phone.getBoundingClientRect();const f=(eye.z-PLANE_Z)/eye.z;view.position.x+=dx/r.width*2*hw*f;view.position.y-=dy/r.height*2*hh*f;clampPan();}
-function clampPan(){const lim=(zoom-1)*1.0;view.position.x=Math.max(-lim,Math.min(lim,view.position.x));view.position.y=Math.max(-lim,Math.min(lim,view.position.y));
+function clampPan(){const lim=(zoom-1)*1.6;view.position.x=Math.max(-lim,Math.min(lim,view.position.x));view.position.y=Math.max(-lim,Math.min(lim,view.position.y));
   if(zoom<=1.001){view.position.set(0,0,0);}}
 let anim=null;
 function animateTo(cx,cy,target){const start=zoom;const t0=performance.now();anim=()=>{const u=Math.min(1,(performance.now()-t0)/260);const e=1-Math.pow(1-u,3);
-  const want=start+(target-start)*e;zoomAt(cx,cy,want/zoom);if(u>=1)anim=null;};}
+  const want=start+(target-start)*e;zoomAt(cx,cy,want/zoom);if(u>=1){anim=null;refocus(cx,cy);}};}
 const pts=new Map();let pinch=null,lastTap=0,tapPos=null,moved=0;
 phone.addEventListener('pointerdown',e=>{phone.setPointerCapture(e.pointerId);pts.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=0;
   if(pts.size===2){const [a,b]=[...pts.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2};}
@@ -293,15 +340,15 @@ phone.addEventListener('pointermove',e=>{
   if(!pts.has(e.pointerId)){if(e.pointerType==='mouse'&&!window.__faceOn)setTarget(e);return;}
   const prev=pts.get(e.pointerId);const cur={x:e.clientX,y:e.clientY};pts.set(e.pointerId,cur);moved+=Math.hypot(cur.x-prev.x,cur.y-prev.y);
   if(pts.size>=2&&pinch){const [a,b]=[...pts.values()];const d=Math.hypot(a.x-b.x,a.y-b.y),cx=(a.x+b.x)/2,cy=(a.y+b.y)/2;
-    panBy(cx-pinch.cx,cy-pinch.cy);zoomAt(cx,cy,d/pinch.d);pinch={d,cx,cy};hideHint();return;}
-  if(window.__faceOn||zoom>1.001||e.pointerType==='mouse'&&e.buttons){if(zoom>1.001)panBy(cur.x-prev.x,cur.y-prev.y);else if(!window.__faceOn)setTarget(e);}
+    panBy(cx-pinch.cx,cy-pinch.cy);zoomAt(cx,cy,d/pinch.d);pinch={d,cx,cy};lastPt={x:cx,y:cy};hideHint();return;}
+  if(window.__faceOn||zoom>1.001||e.pointerType==='mouse'&&e.buttons){if(zoom>1.001){panBy(cur.x-prev.x,cur.y-prev.y);lastPt=null;}else if(!window.__faceOn)setTarget(e);}
   else setTarget(e);});
-function up(e){pts.delete(e.pointerId);if(pts.size<2)pinch=null;
+function up(e){pts.delete(e.pointerId);if(pts.size<2)pinch=null;if(pts.size===0&&moved>=10)refocus();
   if(pts.size===0&&moved<10){const now=performance.now();
     if(now-lastTap<320&&tapPos&&Math.hypot(e.clientX-tapPos.x,e.clientY-tapPos.y)<40){animateTo(e.clientX,e.clientY,zoom>1.3?1:2.2);lastTap=0;}
     else{lastTap=now;tapPos={x:e.clientX,y:e.clientY};}}}
 phone.addEventListener('pointerup',up);phone.addEventListener('pointercancel',up);
-phone.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.clientX,e.clientY,Math.exp(-e.deltaY*0.0015));hideHint();},{passive:false});
+phone.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.clientX,e.clientY,Math.exp(-e.deltaY*0.0015));hideHint();clearTimeout(wheelT);const wx=e.clientX,wy=e.clientY;wheelT=setTimeout(()=>refocus(wx,wy),200);},{passive:false});
 function hideHint(){const h=document.getElementById('hint');if(h)h.style.opacity=0;}
 
 /* resize */
@@ -315,9 +362,14 @@ function loop(){
   if(!touched&&!window.__faceOn&&!reduce){target.x=Math.sin(tt*.5)*.45;target.y=.15+Math.sin(tt*.37)*.18;}
   eye.x+=(target.x-eye.x)*Math.min(1,dt*6);eye.y+=(target.y-eye.y)*Math.min(1,dt*6);eye.z+=(target.z-eye.z)*Math.min(1,dt*4);
   if(anim)anim();
+  if(centerAnim)centerAnim();
   updateCamera();
-  spin.rotation.y=Math.max(-0.75,Math.min(0.75,-eye.x*0.6));
-  orbit.rotation.x=Math.max(0.08,Math.min(0.7,0.32+(eye.y-0.15)*0.3));
+  const yaw=Math.max(-0.75,Math.min(0.75,-eye.x*0.6)),tilt=Math.max(0.08,Math.min(0.7,0.32+(eye.y-0.15)*0.3));
+  focusL.lerp(focusT,Math.min(1,dt*5));
+  spin.rotation.y=yaw;orbit.rotation.x=tilt;
+  adjust.position.subVectors(placeOf(0.32,0,focusL,_v1),placeOf(tilt,yaw,focusL,_v2));
+  scene.updateMatrixWorld();updateFade(dt);
+  {const po=zoom>1.25?0.12:1;poleMat.opacity+=(po-poleMat.opacity)*Math.min(1,dt*6);poleMat.depthWrite=poleMat.opacity>0.95;lanternGroup.visible=(mode==='fx')&&zoom<1.6;}
   bokehPass.uniforms.focus.value=Math.max(0.5,eye.z-(view.position.z-0.5*zoom));
   if(mode==='fx'&&!reduce){nextBurst-=dt;if(nextBurst<=0){burst();nextBurst=1.2+Math.random()*1.6;}}
   stepFireworks(dt);
