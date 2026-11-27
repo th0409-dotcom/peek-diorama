@@ -105,9 +105,9 @@ const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(40,16/9,0.05,60);
 
 /* ---------- window (off-axis) camera: the phone screen is the glass of the box ---------- */
-const EYE0={x:0,y:0.85,z:3.2};
+const EYE0={x:0,y:2.4,z:10};
 const eye={...EYE0},target={...EYE0};window.__peekTarget=target;
-let hw=1.78,hh=1;const camE={x:0,y:0,z:3.2};let zoom=1;
+let hw=1.78,hh=1;const camE={x:0,y:0,z:10};let zoom=1;
 function updateCamera(){
   const zf=Math.pow(zoom,0.9);camE.x=eye.x/zf;camE.y=EYE0.y+(eye.y-EYE0.y)/zf;camE.z=eye.z;
   camera.position.set(camE.x,camE.y,camE.z);camera.quaternion.identity();camera.updateMatrixWorld();
@@ -166,11 +166,25 @@ function layoutBox(){
   box.ceil.rotation.x=Math.PI/2;box.ceil.scale.set(hw*2,BOX_D,1);box.ceil.position.set(0,hh,-BOX_D/2);
   box.left.rotation.y=Math.PI/2;box.left.scale.set(BOX_D,hh*2,1);box.left.position.set(-hw,0,-BOX_D/2);
   box.right.rotation.y=-Math.PI/2;box.right.scale.set(BOX_D,hh*2,1);box.right.position.set(hw,0,-BOX_D/2);
-  wallMat.map.repeat.set(2,1);floorMat.map.repeat.set(3,2);
+  wallMat.map.repeat.set(2,1);floorMat.map.repeat.set(3,2);if(typeof buildForeground==='function')buildForeground();
   backFrame.clear();const t=.07;
   [[0,hh-t/2,hw*2,t],[0,-hh+t/2,hw*2,t],[-hw+t/2,0,t,hh*2],[hw-t/2,0,t,hh*2]].forEach(([x,y,w,h])=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),frameMat);m.position.set(x,y,-BOX_D);backFrame.add(m);});
 }
 
+/* ---------- foreground just behind the glass (big parallax = depth) ---------- */
+const fg=new THREE.Group();view.add(fg);
+function buildForeground(){
+  fg.clear();
+  const n=Math.round(hw*4.2),y0=hh-0.12,z0=-0.25;
+  const pts=[];for(let i=0;i<=30;i++){const t=i/30;pts.push(new THREE.Vector3(-hw+t*2*hw,y0-Math.sin(Math.PI*t)*0.12,z0));}
+  fg.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),lineMat));
+  for(let i=1;i<n;i++){const t=i/n;const m=new THREE.Mesh(lanternGeo,i%3?lanternMat:lanternMat2);m.scale.setScalar(1.7);
+    m.position.set(-hw+t*2*hw,y0-Math.sin(Math.PI*t)*0.12-0.12,z0);m.userData.sway=i;fg.add(m);}
+  const nc=document.createElement('canvas');nc.width=64;nc.height=256;const g=nc.getContext('2d');g.fillStyle='#1d2a5a';g.fillRect(0,0,64,256);g.fillStyle='#f3e7cf';g.font='bold 44px serif';g.textAlign='center';
+  '祭'.split('').forEach((c,i)=>g.fillText(c,32,80+i*60));const nt=new THREE.CanvasTexture(nc);nt.encoding=THREE.sRGBEncoding;
+  const nm=new THREE.MeshStandardMaterial({map:nt,side:THREE.DoubleSide,roughness:.9});
+  [-1,1].forEach(sd=>{for(let k=0;k<2;k++){const p=new THREE.Mesh(new THREE.PlaneGeometry(0.17,0.46),nm);p.position.set(sd*(hw-0.11-k*0.19),hh-0.24,-0.08-k*0.02);fg.add(p);}});
+}
 /* ---------- the diorama on a turntable inside the box ---------- */
 const adjust=new THREE.Group();view.add(adjust);
 const orbit=new THREE.Group();orbit.position.set(0,-hh+0.04,DIO_Z);adjust.add(orbit);
@@ -294,11 +308,11 @@ function makePinwheel(){const g=new THREE.Group();const stick=new THREE.Mesh(new
   g.add(wheel);g.userData.wheel=wheel;return g;}
 /* hidden spots: behind stall backs, behind the torii, under the pool rim, beside a house */
 const ITEM_DEFS=[
- {id:'cat',name:'迷子の黒猫',make:makeCat,pos:[-0.85,0,-0.3],rot:1.2},
- {id:'mask',name:'きつねのお面',make:makeMask,pos:[0.6,0.0,0.22],rot:-1.2},
- {id:'bag',name:'金魚の袋',make:makeBag,pos:[-0.45,0,-0.5],rot:0},
- {id:'fan',name:'うちわ',make:makeFan,pos:[0.75,0,-0.6],rot:-1.5},
- {id:'pin',name:'かざぐるま',make:makePinwheel,pos:[-0.85,0,-1.1],rot:1.0}
+ {id:'cat',name:'迷子の黒猫',make:makeCat,pos:[-0.55,0,0.2],rot:1.2},
+ {id:'mask',name:'きつねのお面',make:makeMask,pos:[0.45,0.0,0.5],rot:-1.0},
+ {id:'bag',name:'金魚の袋',make:makeBag,pos:[-0.55,0,-0.55],rot:0},
+ {id:'fan',name:'うちわ',make:makeFan,pos:[0.35,0,-0.2],rot:-1.5},
+ {id:'pin',name:'かざぐるま',make:makePinwheel,pos:[-0.45,0,-1.0],rot:1.0}
 ];
 ITEM_DEFS.forEach(d=>{const o=d.make();o.position.set(...d.pos);o.rotation.y+=d.rot;o.scale.setScalar(1.15);o.userData.item=d;dio.add(o);ITEMS.push(o);
   const el=document.createElement('div');el.className='item';el.innerHTML='<i></i>'+d.name;d.el=el;$('items').appendChild(el);});
@@ -355,7 +369,7 @@ function zoomAt(cx,cy,k){const nz=Math.max(ZMIN,Math.min(ZMAX,zoom*k));k=nz/zoom
 function panBy(dx,dy){const r=canvas.getBoundingClientRect();const f=(camE.z-PLANE_Z)/camE.z;view.position.x+=dx/r.width*2*hw*f;view.position.y-=dy/r.height*2*hh*f;clampPan();}
 function clampPan(){if(zoom<=1.001){view.position.set(0,0,0);return;}const lim=(zoom-1)*2.2;view.position.x=Math.max(-lim,Math.min(lim,view.position.x));view.position.y=Math.max(-lim,Math.min(lim,view.position.y));}
 function animateTo(cx,cy,tz){const start=zoom,t0=performance.now();anim=()=>{const u=Math.min(1,(performance.now()-t0)/260),e=1-Math.pow(1-u,3);zoomAt(cx,cy,(start+(tz-start)*e)/zoom);if(u>=1){anim=null;refocus(cx,cy);}};}
-function setTarget(e){if(window.__faceOn)return;const r=canvas.getBoundingClientRect();const nx=((e.clientX-r.left)/r.width-.5)*2,ny=((e.clientY-r.top)/r.height-.5)*2;target.x=nx*1.4;target.y=EYE0.y-ny*0.7;}
+function setTarget(e){if(window.__faceOn)return;const r=canvas.getBoundingClientRect();const nx=((e.clientX-r.left)/r.width-.5)*2,ny=((e.clientY-r.top)/r.height-.5)*2;target.x=nx*3.2;target.y=EYE0.y-ny*2.2;}
 const pts=new Map();let pinch=null,lastTap=0,tapPos=null,moved=0,wheelT=0;
 canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pts.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=0;
   if(pts.size===2){const [a,b]=[...pts.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,ang:Math.atan2(b.y-a.y,b.x-a.x)};}});
@@ -409,17 +423,17 @@ const clock=new THREE.Clock();let nextBurst=0.3,tt=0;
 function loop(){
   const dt=Math.min(clock.getDelta(),.05);tt+=dt;
   if(!window.__faceOn&&pts.size===0){/* idle: drift back toward the front */target.x+=(EYE0.x-target.x)*dt*0.4;target.y+=(EYE0.y-target.y)*dt*0.4;}
-  {const sp=window.__faceOn?2.2:6;eye.x+=(target.x-eye.x)*Math.min(1,dt*sp);eye.y+=(target.y-eye.y)*Math.min(1,dt*sp);eye.z+=(target.z-eye.z)*Math.min(1,dt*sp*.6);}
+  {const sp=window.__faceOn?8:7;eye.x+=(target.x-eye.x)*Math.min(1,dt*sp);eye.y+=(target.y-eye.y)*Math.min(1,dt*sp);eye.z+=(target.z-eye.z)*Math.min(1,dt*sp*.6);}
   if(anim)anim();if(centerAnim)centerAnim();
   if(yawTo!==null){yawOff+=(yawTo-yawOff)*Math.min(1,dt*6);if(Math.abs(yawTo-yawOff)<0.01){yawOff=yawTo;yawTo=null;}}
   updateCamera();
-  const yaw=yawOff+Math.max(-1.5,Math.min(1.5,-eye.x*0.9));
+  const yaw=yawOff;
   focusL.lerp(focusT,Math.min(1,dt*5));spin.rotation.y=yaw;
   adjust.position.subVectors(placeOf(0,focusL,_v1),placeOf(yaw,focusL,_v2));
   scene.updateMatrixWorld();updateFade(dt);
   {const po=zoom>1.25?0.12:1;poleMat.opacity+=(po-poleMat.opacity)*Math.min(1,dt*6);poleMat.depthWrite=poleMat.opacity>0.95;lanternGroup.visible=zoom<1.6;}
   nextBurst-=dt;if(nextBurst<=0){burst();nextBurst=1.0+Math.random()*1.4;}stepFireworks(dt);
-  lanternGroup.children.forEach((m,i)=>{if(m.isMesh)m.rotation.z=Math.sin(tt*1.3+i)*.06;});
+  lanternGroup.children.forEach((m,i)=>{if(m.isMesh)m.rotation.z=Math.sin(tt*1.3+i)*.06;});fg.children.forEach(m=>{if(m.userData.sway)m.rotation.z=Math.sin(tt*1.1+m.userData.sway)*.05;});
   warm.forEach((l,i)=>{l.distance=1.6*zoom;l.intensity=3.0+Math.sin(tt*7+i*2)*.12;});
   ITEMS.forEach(o=>{if(o.userData.wheel)o.userData.wheel.rotation.z+=dt*3;
     if(o.userData.found&&o.visible){o.userData.pop+=dt;const p=o.userData.pop;o.scale.setScalar(1.15*(1+p*2.5));o.position.y=ITEM_DEFS.find(d=>d===o.userData.item).pos[1]+p*.3;if(p>0.6)o.visible=false;}});
@@ -434,7 +448,7 @@ window.__dbg={get zoom(){return zoom},ITEMS,placed,camera,scene,setYaw:v=>{yawOf
 </script>
 <script type="module">
 /* face tracking: the front camera stands in for where your head is */
-let running=false,video,lm,base=null;const EYE0={x:0,y:0.85,z:3.2};
+let running=false,video,lm,base=null;const EYE0={x:0,y:2.4,z:10};
 window.__faceReset=()=>{base=null;};
 window.__startFace=async()=>{
   const note=document.getElementById('camnote');
@@ -451,9 +465,9 @@ window.__startFace=async()=>{
       if(f){const a=f[33],b=f[263];const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;const iod=Math.max(Math.hypot(a.x-b.x,a.y-b.y),.05);
         if(!base)base={x:mx,y:my,iod};const dx=mx-base.x,dy=my-base.y;
         const kk=Math.hypot(dx,dy)<0.035?0.04:0.002;base.x+=dx*kk;base.y+=dy*kk;base.iod+=(iod-base.iod)*0.003;
-        const DZ=0.03,shape=v=>{const m=Math.abs(v)-DZ;return m<=0?0:Math.sign(v)*m;};
-        T.x=Math.max(-1.6,Math.min(1.6,-shape(dx)*5.5));T.y=Math.max(EYE0.y-0.8,Math.min(EYE0.y+0.7,EYE0.y-shape(dy)*3.6));
-        const rz=base.iod/iod;T.z=Math.max(2.4,Math.min(4.6,EYE0.z*(Math.abs(rz-1)<0.06?1:rz)));}}
+        const DZ=0.015,shape=v=>{const m=Math.abs(v)-DZ;return m<=0?0:Math.sign(v)*m;};
+        T.x=Math.max(-4,Math.min(4,-shape(dx)*11));T.y=Math.max(EYE0.y-2.6,Math.min(EYE0.y+2.6,EYE0.y-shape(dy)*8.5));
+        const rz=base.iod/iod;T.z=Math.max(6,Math.min(15,EYE0.z*(Math.abs(rz-1)<0.04?1:rz)));}}
     requestAnimationFrame(tick);};tick();
 };
 </script>
