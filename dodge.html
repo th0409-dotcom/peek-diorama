@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>よける箱テスト</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700;900&display=swap" rel="stylesheet">
+<style>
+/*
+VOICE: 見え方の検証用。暗闇の方眼トンネルを、弾が手前に飛んでくる。
+IDEA: 画面＝ガラス窓。その奥にまっすぐ伸びる方眼の通路。
+PICTURE: 全画面の黒と、シアンの方眼線、オレンジに光る弾。
+COLOUR and TYPE: 黒 #05060c、線 #3fd8ff、弾 #ff8a3d、文字は白。Zen Maru Gothic。
+LAYOUT: 全画面。左上に結果、右上に顔認識の回数、中央に一瞬だけ判定の文字。
+*/
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;overscroll-behavior:none;font-family:"Zen Maru Gothic",system-ui,sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
+#c{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+.hud{position:fixed;top:max(10px,env(safe-area-inset-top));left:max(14px,env(safe-area-inset-left));right:max(14px,env(safe-area-inset-right));display:flex;justify-content:space-between;pointer-events:none;font-weight:900;font-size:15px;text-shadow:0 1px 4px #000}
+.hud span{background:#0008;border:1px solid #fff2;border-radius:16px;padding:4px 12px}
+.call{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%) scale(.8);font-weight:900;font-size:clamp(28px,6vw,54px);opacity:0;transition:opacity .15s,transform .15s;pointer-events:none;text-shadow:0 2px 12px #000}
+.call.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.flash{position:fixed;inset:0;background:radial-gradient(circle at var(--x,50%) var(--y,50%),#ff6a3d88,#ff000022 60%,transparent);opacity:0;pointer-events:none;transition:opacity .35s}
+.flash.on{opacity:1;transition:none}
+.ui{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));display:flex;gap:8px;z-index:5}
+.ui button{min-height:40px;padding:0 14px;border-radius:20px;border:1px solid #fff4;background:#000a;color:#fff;font:inherit;font-weight:900;font-size:13px;cursor:pointer}
+.overlay{position:fixed;inset:0;display:grid;place-items:center;background:#000c;z-index:10;padding:20px}
+.overlay[hidden]{display:none}
+.card{background:#10131f;border:1px solid #3fd8ff55;border-radius:18px;padding:22px 26px;max-width:min(520px,92vw);text-align:center}
+.card h1{margin:0 0 6px;font-size:clamp(24px,4.5vw,34px);font-weight:900}
+.card p{margin:8px 0;font-size:15px;line-height:1.55;color:#cfe}
+.card .sub{font-size:13px;opacity:.7}
+.btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+.btn{min-height:48px;padding:0 22px;border-radius:24px;border:0;font:inherit;font-weight:900;font-size:16px;cursor:pointer;background:#ff8a3d;color:#1a0b00}
+.btn.sec{background:#1f2740;color:#fff;border:1px solid #3fd8ff66}
+.btn:focus-visible{outline:3px solid #3fd8ff;outline-offset:2px}
+.rotate{position:fixed;inset:0;z-index:20;display:none;place-items:center;background:#000e;text-align:center;font-weight:900;font-size:20px}
+@media (orientation:portrait){.rotate.show{display:grid}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="flash" id="flash"></div>
+<div class="hud"><span id="score">よけた 0 ／ 当たった 0</span><span id="fps">顔認識 -- 回/秒</span></div>
+<div class="call" id="call"></div>
+<div class="ui"><button id="recenter">正面</button></div>
+<div class="overlay" id="start">
+  <div class="card">
+    <h1>よける箱テスト</h1>
+    <p>スマホを横にして、30cmくらい離して持ってください。<br>奥から飛んでくる弾を、顔を左右に動かしてよけてみて。</p>
+    <p class="sub">弾は、撃たれた瞬間の顔の位置めがけて飛んできます。カメラの映像は端末の中だけで使います。</p>
+    <div class="btns"><button class="btn" id="goFace">カメラで遊ぶ</button><button class="btn sec" id="goTouch">指で試す</button></div>
+  </div>
+</div>
+<div class="rotate show" id="rotate"><div>スマホを横にしてね</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script>
+{
+const $=id=>document.getElementById(id);
+const canvas=$('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputEncoding=THREE.sRGBEncoding;
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x05060c).convertSRGBToLinear();
+const camera=new THREE.PerspectiveCamera(30,16/9,0.05,200);
+
+/* head-coupled window: 1 unit = half the screen height (~3.5cm); phone ~35cm away */
+const EYE0={x:0,y:0,z:10};const eye={...EYE0},target={...EYE0};window.__target=target;
+let hw=2,hh=1;
+function updateCamera(){camera.position.set(eye.x,eye.y,eye.z);camera.quaternion.identity();camera.updateMatrixWorld();
+  const n=camera.near,k=n/eye.z;camera.projectionMatrix.makePerspective((-hw-eye.x)*k,(hw-eye.x)*k,(hh-eye.y)*k,(-hh-eye.y)*k,n,camera.far);
+  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();}
+
+/* ---------- the grid tunnel: its mouth is exactly the screen ---------- */
+const D=40,STEP=0.5;
+const grid=new THREE.Group();scene.add(grid);
+const lineMat=new THREE.LineBasicMaterial({color:0x2fb8e0,transparent:true,opacity:.5});
+const ringMat=new THREE.LineBasicMaterial({color:0x2fb8e0,transparent:true,opacity:.28});
+function buildGrid(){
+  grid.clear();const P=[];
+  /* lines running into the depth on all four faces */
+  for(let x=-hw;x<=hw+1e-6;x+=STEP){P.push(x,-hh,0,x,-hh,-D, x,hh,0,x,hh,-D);}
+  for(let y=-hh;y<=hh+1e-6;y+=STEP){P.push(-hw,y,0,-hw,y,-D, hw,y,0,hw,y,-D);}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));grid.add(new THREE.LineSegments(g,lineMat));
+  /* cross-section frames every STEP*2 going back */
+  const R=[];for(let z=0;z>=-D;z-=STEP*2){R.push(-hw,-hh,z,hw,-hh,z, hw,-hh,z,hw,hh,z, hw,hh,z,-hw,hh,z, -hw,hh,z,-hw,-hh,z);}
+  const g2=new THREE.BufferGeometry();g2.setAttribute('position',new THREE.Float32BufferAttribute(R,3));grid.add(new THREE.LineSegments(g2,ringMat));
+}
+scene.fog=new THREE.Fog(new THREE.Color(0x05060c).convertSRGBToLinear(),14,52);
+
+/* ---------- balls ---------- */
+const ballGeo=new THREE.SphereGeometry(0.32,32,20);
+const ballMat=new THREE.MeshBasicMaterial({color:new THREE.Color(0xff8a3d).convertSRGBToLinear(),fog:false});
+const glowTex=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');const r=g.createRadialGradient(64,64,0,64,64,64);r.addColorStop(0,'rgba(255,170,90,.9)');r.addColorStop(.4,'rgba(255,120,50,.35)');r.addColorStop(1,'rgba(255,80,20,0)');g.fillStyle=r;g.fillRect(0,0,128,128);return new THREE.CanvasTexture(c);})();
+const balls=[];
+/* floor marker under each ball: shows where it is in depth */
+const markGeo=new THREE.RingGeometry(0.18,0.3,32);markGeo.rotateX(-Math.PI/2);
+const markMat=new THREE.MeshBasicMaterial({color:0xff8a3d,transparent:true,opacity:.6,depthWrite:false});
+function launch(){
+  const b=new THREE.Mesh(ballGeo,ballMat);const s=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));s.scale.set(1.15,1.15,1);b.add(s);
+  const m=new THREE.Mesh(markGeo,markMat);scene.add(m);
+  const start=new THREE.Vector3((Math.random()*2-1)*(hw-.5),(Math.random()*2-1)*(hh-.4),-D+1);
+  /* aim at where your eyes are right now */
+  const aim=new THREE.Vector3(eye.x,eye.y,eye.z);
+  const dir=aim.clone().sub(start).normalize();const speed=9+Math.random()*3;
+  b.position.copy(start);scene.add(b);balls.push({b,m,dir,speed,judged:false});
+}
+const splats=[];
+function splat(x,y){const s=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0xff9a5a,transparent:true,depthWrite:false}));s.position.set(x,y,0.01);s.scale.set(1.2,1.2,1);scene.add(s);splats.push({s,t:0});}
+
+/* ---------- judging ---------- */
+let dodged=0,hit=0,callT=0;
+function call(text,color){const c=$('call');c.textContent=text;c.style.color=color;c.classList.add('on');clearTimeout(callT);callT=setTimeout(()=>c.classList.remove('on'),600);}
+function judge(o){
+  /* where would this ball be when it reaches your head's depth? */
+  const p=o.b.position,d=o.dir;const t=(eye.z-p.z)/d.z;const hx=p.x+d.x*t,hy=p.y+d.y*t;
+  const miss=Math.hypot(hx-eye.x,(hy-eye.y)*1.3);
+  if(miss<1.7){hit++;splat(p.x,p.y);const v=p.clone().project(camera);const f=$('flash');f.style.setProperty('--x',((v.x+1)/2*100)+'%');f.style.setProperty('--y',((1-v.y)/2*100)+'%');f.classList.add('on');setTimeout(()=>f.classList.remove('on'),60);call('当たった！','#ff9a6a');if(navigator.vibrate)navigator.vibrate(60);}
+  else{dodged++;call('よけた！','#7fe8ff');}
+  $('score').textContent='よけた '+dodged+' ／ 当たった '+hit;
+}
+
+/* ---------- post ---------- */
+const composer=new THREE.EffectComposer(renderer);composer.addPass(new THREE.RenderPass(scene,camera));
+const bloom=new THREE.UnrealBloomPass(new THREE.Vector2(800,400),.55,.35,.6);composer.addPass(bloom);
+
+/* ---------- input ---------- */
+function setFromPointer(x,y){if(window.__faceOn)return;const nx=(x/innerWidth-.5)*2,ny=(y/innerHeight-.5)*2;target.x=nx*4;target.y=-ny*2.6;}
+addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||e.buttons)setFromPointer(e.clientX,e.clientY);});
+addEventListener('pointerdown',e=>setFromPointer(e.clientX,e.clientY));
+$('recenter').onclick=()=>{Object.assign(target,EYE0);if(window.__faceReset)window.__faceReset();};
+let playing=false,nextShot=1.5;
+async function go(face){
+  try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen({navigationUI:'hide'});}catch(e){}
+  try{if(screen.orientation&&screen.orientation.lock)await screen.orientation.lock('landscape');}catch(e){}
+  $('start').hidden=true;playing=true;if(face&&window.__startFace)window.__startFace();}
+$('goFace').onclick=()=>go(true);$('goTouch').onclick=()=>go(false);
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);composer.setSize(w,h);hh=1;hw=w/h;bloom.resolution.set(w,h);buildGrid();$('rotate').classList.toggle('show',h>w);}
+addEventListener('resize',resize);resize();
+
+const clock=new THREE.Clock();
+function loop(){const dt=Math.min(clock.getDelta(),.05);
+  const sp=window.__faceOn?14:10;eye.x+=(target.x-eye.x)*Math.min(1,dt*sp);eye.y+=(target.y-eye.y)*Math.min(1,dt*sp);eye.z+=(target.z-eye.z)*Math.min(1,dt*sp*.6);
+  updateCamera();
+  if(playing){nextShot-=dt;if(nextShot<=0){launch();nextShot=1.3+Math.random()*1.0;}}
+  for(let i=balls.length-1;i>=0;i--){const o=balls[i];o.b.position.addScaledVector(o.dir,o.speed*dt);
+    o.m.position.set(o.b.position.x,-hh+.01,o.b.position.z);o.m.visible=o.b.position.z<0;
+    if(!o.judged&&o.b.position.z>=0){o.judged=true;judge(o);if(o.b.position)o.b.visible=false;}
+    if(o.b.position.z>0.5||o.judged){scene.remove(o.b);scene.remove(o.m);o.b.children[0].material.dispose();balls.splice(i,1);}}
+  for(let i=splats.length-1;i>=0;i--){const s=splats[i];s.t+=dt;s.s.material.opacity=Math.max(0,1-s.t/1.2);if(s.t>1.2){scene.remove(s.s);s.s.material.dispose();splats.splice(i,1);}}
+  if(window.__fps!==undefined)$('fps').textContent='顔認識 '+window.__fps+' 回/秒';
+  composer.render();requestAnimationFrame(loop);}
+loop();
+}
+</script>
+<script type="module">
+let running=false,video,lm,base=null;
+window.__faceReset=()=>{base=null;};
+window.__startFace=async()=>{
+  try{video=document.createElement('video');video.playsInline=true;video.muted=true;
+    video.srcObject=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:640,height:480,frameRate:{ideal:60}}});await video.play();
+    const V=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+    const fs=await V.FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+    lm=await V.FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'GPU'},runningMode:'VIDEO',numFaces:1});
+  }catch(e){document.getElementById('fps').textContent='カメラが使えません（'+(e.name||e.message||e)+'）';return;}
+  running=true;window.__faceOn=true;base=null;const T=window.__target;let last=-1,n=0,t0=performance.now();
+  const tick=()=>{if(!running)return;
+    if(video.currentTime!==last){last=video.currentTime;n++;const now=performance.now();if(now-t0>1000){window.__fps=Math.round(n*1000/(now-t0));n=0;t0=now;}
+      const r=lm.detectForVideo(video,now);const f=r.faceLandmarks&&r.faceLandmarks[0];
+      if(f){const a=f[33],b=f[263];const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;const iod=Math.max(Math.hypot(a.x-b.x,a.y-b.y),.05);
+        if(!base)base={x:mx,y:my,iod};const dx=mx-base.x,dy=my-base.y;
+        T.x=Math.max(-5,Math.min(5,-dx*11.5));T.y=Math.max(-3.5,Math.min(3.5,-dy*8.6));T.z=Math.max(5,Math.min(18,10*base.iod/iod));}}
+    requestAnimationFrame(tick);};tick();
+};
+</script>
+</body>
+</html>
